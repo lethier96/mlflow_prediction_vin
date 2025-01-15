@@ -1,31 +1,28 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-import os
-import configparser
-
 import pandas as pd
 import numpy as np
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import ElasticNet
 
 import mlflow
-from mlflow.models import infer_signature
-# import mlflow.sklearn
 
+import common as common
 
-TARGET = "quality"
-RANDOM_STATE = 42
+DATA_PATH = common.CONFIG['paths']['data']
+DIR_MLRUNS = common.CONFIG['paths']['mlruns']
+
+TARGET = common.CONFIG['ml']['target_name']
+RANDOM_STATE = common.CONFIG['ml']['random_state']
+
+MODEL_NAME = common.CONFIG['mlflow']['model_name']
+MODEL_VERSION = common.CONFIG['mlflow']['model_version']
 
 def load_data():
 
     print("Loading wine dataset")
-
-    # Read the wine-quality csv file (make sure you're running this from the root of MLflow!)
-    dir_root = os.path.dirname(os.path.abspath(__file__))
-    wine_path = os.path.join(dir_root, "data/wine-quality.csv")
-    data = pd.read_csv(wine_path)
+    data = pd.read_csv(DATA_PATH)
     print(f"{len(data)} objects loaded")
 
     return data
@@ -50,11 +47,11 @@ def preprocess_data(data):
 def train_and_log_model(model, X_train, X_test, y_train, y_test):
 
     model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
+    # y_pred = model.predict(X_test)
 
     # Infer an MLflow model signature from the training data (input),
     # model predictions (output) and parameters (for inference).
-    signature = infer_signature(X_train, y_train)
+    signature = mlflow.models.infer_signature(X_train, y_train)
 
     # Log model
     model_info = mlflow.sklearn.log_model(
@@ -75,25 +72,9 @@ def train_and_log_model(model, X_train, X_test, y_train, y_test):
     )
     return results
 
-def calc_scores_linearmodel(actual, pred):
-
-    rmse = mean_squared_error(actual, pred, squared=False)
-    r2 = r2_score(actual, pred)
-
-    return {
-        "rmse": rmse,
-        "r2": r2}
-
-
 if __name__ == "__main__":
 
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    DIR_MLRUNS = config.get('Paths', 'DIR_MLRUNS')
-    MODEL_NAME = config.get('Models', 'MODEL_NAME')
-    MODEL_VERSION = config.getint('Models', 'MODEL_VERSION')
-
-    mlflow.set_tracking_uri("file:" + os.path.abspath(DIR_MLRUNS))
+    mlflow.set_tracking_uri("file:" + DIR_MLRUNS)
 
     np.random.seed(RANDOM_STATE)
 
@@ -104,8 +85,8 @@ if __name__ == "__main__":
     experiment_id = mlflow.create_experiment(exp_name)
     mlflow.set_experiment(exp_name)
 
-    params_alpha = [0.001, 0.01, 0.1, 1, 10]
-    params_l1_ratio = np.arange(0.0, 1.1, 0.2)
+    params_alpha = [0.01, 0.1, 1, 10]
+    params_l1_ratio = np.arange(0.0, 1.1, 0.5)
     # params_alpha = [0.5]
     # params_l1_ratio = [0.5]
 
@@ -120,26 +101,29 @@ if __name__ == "__main__":
         for alpha in params_alpha:
             for l1_ratio in params_l1_ratio:
                 k += 1
-                print(f"***** ITERATION {k} from {num_iterations} *****")
-                child_run_name = f"{run_name}_{k}"
+                print(f"\n***** ITERATION {k} from {num_iterations} *****")
+                child_run_name = f"{run_name}_{k:02}"
                 model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=RANDOM_STATE)
                 with mlflow.start_run(run_name=child_run_name, experiment_id=experiment_id, nested=True) as child_run:
                     results = train_and_log_model(model, X_train, X_test, y_train, y_test)
-                    print()
                     mlflow.log_param("alpha", alpha)
                     mlflow.log_param("l1_ratio", l1_ratio)
                     if results.metrics['root_mean_squared_error'] < best_score:
                         best_score = results.metrics['root_mean_squared_error']
                         best_run_id = child_run.info.run_id
+                    print(f"rmse: {results.metrics['root_mean_squared_error']}")
+                    print(f"r2: {results.metrics['r2_score']}")
 
     model_uri = f"runs:/{best_run_id}/sklearn-model"
-    mv = mlflow.register_model(model_uri, "wine_quality_prediction")
+    mv = mlflow.register_model(model_uri, MODEL_NAME)
     print("Model saved to registry:")
     print(f"Name: {mv.name}")
     print(f"Version: {mv.version}")
     print(f"Source: {mv.source}")
 
-    print(f"models:/{MODEL_NAME}/{MODEL_VERSION}")
-    model = mlflow.pyfunc.load_model(model_uri=f"models:/{MODEL_NAME}/{MODEL_VERSION}")
+    # ----
+
+    model_uri = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
+    print(model_uri)
+    model = mlflow.pyfunc.load_model(model_uri=model_uri)
     y_pred = model.predict(X_test)
-    print(calc_scores_linearmodel(y_test, y_pred))

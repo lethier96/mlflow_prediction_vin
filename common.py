@@ -17,12 +17,3 @@ with open(CONFIG_PATH, "r") as f:
 
     for key, value in CONFIG['paths'].items():
         CONFIG['paths'][key] = get_full_path(value)
-
-def calc_scores_linearmodel(actual, pred):
-
-    rmse = mean_squared_error(actual, pred, squared=False)
-    r2 = r2_score(actual, pred)
-
-    return {
-        "rmse": rmse,
-        "r2": r2}
