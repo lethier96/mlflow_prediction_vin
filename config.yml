@@ -1,0 +1,9 @@
+paths:
+  data: ./data/wine-quality.csv
+  mlruns: ./mlruns
+mlflow:
+  model_name: wine_quality_prediction
+  model_version: 1
+ml:
+  target_name: quality
+  random_state: 42
