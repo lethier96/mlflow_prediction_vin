@@ -1,6 +1,5 @@
 import os
 import yaml
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # project root
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))

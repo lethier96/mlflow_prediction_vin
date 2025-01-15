@@ -4,6 +4,7 @@ paths:
 mlflow:
   model_name: wine_quality_prediction
   model_version: 1
+  experiment_name: wine_quality_prediction
 ml:
   target_name: quality
   random_state: 42
