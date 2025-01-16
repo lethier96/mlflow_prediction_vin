@@ -6,9 +6,10 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import root_mean_squared_error
 
 import mlflow
+from mlflow.tracking import MlflowClient
 
 import common as common
 
@@ -52,6 +53,13 @@ def train_and_log_model(model, X_train, X_test, y_train, y_test):
     )
     return results
 
+def get_registered_model_mse(model_name, model_version):
+    client = MlflowClient()
+    model_version_details = client.get_model_version(name=model_name, version=model_version)
+    run_id = model_version_details.run_id
+    run_data = client.get_run(run_id).data
+    return run_data.metrics['root_mean_squared_error']
+
 if __name__ == "__main__":
     mlflow.set_tracking_uri("file:" + DIR_MLRUNS)
     np.random.seed(RANDOM_STATE)
@@ -86,12 +94,21 @@ if __name__ == "__main__":
                     print(f"rmse: {results.metrics['root_mean_squared_error']}")
                     print(f"r2: {results.metrics['r2_score']}")
 
-    model_uri = f"runs:/{best_run_id}/sklearn-model"
-    mv = mlflow.register_model(model_uri, MODEL_NAME)
-    print("Model saved to the model registry:")
-    print(f"Name: {mv.name}")
-    print(f"Version: {mv.version}")
-    print(f"Source: {mv.source}")
+
+    # Compare with the registered model
+    registered_model_rmse = get_registered_model_mse(MODEL_NAME, MODEL_VERSION)
+    print(f"Registered model RMSE: {registered_model_rmse}")
+    print(f"Best model RMSE: {best_score}")
+
+    if best_score < registered_model_rmse:
+        model_uri = f"runs:/{best_run_id}/sklearn-model"
+        mv = mlflow.register_model(model_uri, MODEL_NAME)
+        print("Model saved to the model registry:")
+        print(f"Name: {mv.name}")
+        print(f"Version: {mv.version}")
+        print(f"Source: {mv.source}")
+    else:
+        print("The new model did not improve the MSE and was not registered.")
 
     print("#" * 20)
     print("Load model from the model registry")
@@ -99,4 +116,4 @@ if __name__ == "__main__":
     print(f"Model URI: {model_uri}")
     model = mlflow.pyfunc.load_model(model_uri=model_uri)
     y_pred = model.predict(X_test)
-    print(f"RMSE for test data = {mean_squared_error(y_test, y_pred, squared=False)}")
+    print(f"RMSE for test data = {root_mean_squared_error(y_test, y_pred, squared=False)}")
